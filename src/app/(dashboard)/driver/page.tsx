@@ -1,36 +1,60 @@
 'use client';
 
+import { useState } from 'react';
 import AuthGuard from '@/components/auth/AuthGuard';
 import Navbar from '@/components/shared/Navbar';
+import SearchBar from '@/components/driver/SearchBar';
+import dynamic from 'next/dynamic';
+
+// Dynamically import ParkingMap (Leaflet doesn't support SSR)
+const ParkingMap = dynamic(() => import('@/components/map/ParkingMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full bg-[#0a0a0a] flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-white/20 border-t-[#00d4ff] rounded-full animate-spin" />
+        <span className="text-white/40 text-xs tracking-wider uppercase">Loading map...</span>
+      </div>
+    </div>
+  ),
+});
 
 export default function DriverDashboard() {
+  const [flyToLat, setFlyToLat] = useState<number | undefined>();
+  const [flyToLng, setFlyToLng] = useState<number | undefined>();
+  const [filters, setFilters] = useState<{
+    maxPrice?: number;
+    isCovered?: boolean;
+    hasEVCharging?: boolean;
+    hasCCTV?: boolean;
+  }>({});
+
+  const handleSearch = (lat: number, lng: number) => {
+    setFlyToLat(lat);
+    setFlyToLng(lng);
+  };
+
+  const handleFilterChange = (newFilters: typeof filters) => {
+    setFilters(newFilters);
+  };
+
   return (
     <AuthGuard requiredRole="driver">
       <Navbar />
-      <main className="min-h-screen bg-[#0a0a0a] pt-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-2xl font-light text-white tracking-wide">
-              Driver Dashboard
-            </h1>
-            <p className="text-white/40 text-sm mt-1">
-              Find and manage your parking spots
-            </p>
-          </div>
+      <main className="h-screen bg-[#0a0a0a] pt-16 relative">
+        {/* Full-screen Map */}
+        <div className="absolute inset-0 top-16">
+          <ParkingMap
+            flyToLat={flyToLat}
+            flyToLng={flyToLng}
+            filters={filters}
+          />
 
-          {/* Placeholder — Map and booking UI will be built in Phase 5 */}
-          <div className="bg-white/[0.03] border border-white/[0.08] rounded-sm p-12 text-center">
-            <div className="w-16 h-16 border border-white/10 flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">🗺️</span>
-            </div>
-            <h2 className="text-white/60 text-lg font-light mb-2">
-              Map Coming Soon
-            </h2>
-            <p className="text-white/30 text-sm max-w-md mx-auto">
-              The interactive parking map with live availability, AI pricing, and instant booking will appear here.
-            </p>
-          </div>
+          {/* Search Bar overlay */}
+          <SearchBar
+            onSearch={handleSearch}
+            onFilterChange={handleFilterChange}
+          />
         </div>
       </main>
     </AuthGuard>
