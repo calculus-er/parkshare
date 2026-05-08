@@ -24,6 +24,31 @@ interface CreateBookingBody {
   aiPricePerHour: number;
 }
 
+interface OverlapBooking {
+  bookingId: string;
+  driverId: string;
+  driverName: string;
+  startTime: Timestamp;
+  endTime: Timestamp;
+  status: string;
+}
+
+async function createNotificationLite(
+  uid: string,
+  type: string,
+  message: string,
+  metadata: Record<string, string> = {}
+) {
+  await addDoc(collection(db, 'users', uid, 'notifications'), {
+    uid,
+    type,
+    message,
+    metadata,
+    read: false,
+    createdAt: serverTimestamp(),
+  });
+}
+
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -108,6 +133,17 @@ export async function POST(req: Request) {
       createdAt: serverTimestamp(),
     });
 
+    await createNotificationLite(
+      driverId,
+      'booking_confirmed',
+      `Your booking at ${spot.title} is confirmed for ${durationHours}h.`,
+      {
+        bookingId: createdRef.id,
+        spotId,
+        spotTitle: spot.title,
+      }
+    );
+
     await updateDoc(doc(db, 'parkingSpots', spotId), {
       totalBookings: increment(1),
     });
@@ -164,34 +200,51 @@ export async function PATCH(req: Request) {
       );
       const overlapSnap = await getDocs(overlapQuery);
 
-      let conflictingBooking: (Booking & { bookingId: string }) | null = null;
+      let conflictingBooking: OverlapBooking | null = null;
       let concurrentCount = 0;
 
-      overlapSnap.docs.forEach((d) => {
-        if (d.id === bookingId) return; // skip our own booking
+      for (const d of overlapSnap.docs) {
+        if (d.id === bookingId) continue; // skip our own booking
         const b = d.data() as Booking;
-        if (!['active', 'upcoming', 'overstaying'].includes(b.status)) return;
+        if (!['active', 'upcoming', 'overstaying'].includes(b.status)) continue;
         // Check if this booking overlaps with the extended window
         if (b.startTime.toMillis() < newEnd.toMillis() && b.endTime.toMillis() > currentEnd) {
           concurrentCount++;
           if (!conflictingBooking) {
-            conflictingBooking = { ...b, bookingId: d.id };
+            conflictingBooking = {
+              bookingId: d.id,
+              driverId: b.driverId,
+              driverName: b.driverName,
+              startTime: b.startTime,
+              endTime: b.endTime,
+              status: b.status,
+            };
           }
         }
-      });
+      }
 
       // If extending fills all spots → there's a conflict
       const hasConflict = concurrentCount >= totalSpots;
 
       if (hasConflict && conflictingBooking) {
+        const conflictTarget = conflictingBooking;
+        await createNotificationLite(
+          conflictTarget.driverId,
+          'extension_conflict',
+          `A driver wants to extend at ${booking.spotTitle}. You may receive compensation and alternate options.`,
+          {
+            bookingId: conflictTarget.bookingId,
+            spotTitle: booking.spotTitle,
+          }
+        );
         return NextResponse.json({
           conflict: true,
           conflictingBooking: {
-            bookingId: (conflictingBooking as Booking & { bookingId: string }).bookingId,
-            driverName: (conflictingBooking as Booking).driverName,
-            driverId: (conflictingBooking as Booking).driverId,
-            startTimeMs: (conflictingBooking as Booking).startTime.toMillis(),
-            endTimeMs: (conflictingBooking as Booking).endTime.toMillis(),
+            bookingId: conflictTarget.bookingId,
+            driverName: conflictTarget.driverName,
+            driverId: conflictTarget.driverId,
+            startTimeMs: conflictTarget.startTime.toMillis(),
+            endTimeMs: conflictTarget.endTime.toMillis(),
           },
           message: 'Extension conflicts with an upcoming booking. Conflict resolution required.',
         }, { status: 409 });

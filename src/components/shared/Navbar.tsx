@@ -2,10 +2,11 @@
 
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
-import { LogOut, Bell, ChevronDown } from 'lucide-react';
+import { LogOut, ChevronDown } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import NotificationCenter from './NotificationCenter';
 
 export default function Navbar() {
   const { user, userRole, signOut } = useAuth();
@@ -51,10 +52,7 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-4">
-            {/* Notifications (placeholder) */}
-            <button className="relative p-2 text-white/50 hover:text-white transition-colors">
-              <Bell className="w-5 h-5" />
-            </button>
+            <NotificationCenter />
 
             {/* User Menu */}
             <div className="relative">

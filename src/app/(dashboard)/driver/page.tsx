@@ -20,7 +20,7 @@ import ExtensionModal from '@/components/driver/ExtensionModal';
 import VideoCapture from '@/components/driver/VideoCapture';
 import DamageClaim from '@/components/driver/DamageClaim';
 import dynamic from 'next/dynamic';
-import { enrichSpotsWithStatus } from '@/lib/spotUtils';
+import { enrichSpotsWithStatus, filterSpotsByWindowAvailability } from '@/lib/spotUtils';
 import type { SpotWithStatus, Booking } from '@/types';
 import { useAppStore } from '@/store/useAppStore';
 import {
@@ -28,6 +28,8 @@ import {
   SlidersHorizontal, X, Shield, Zap, Eye, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import EmptyState from '@/components/ui/EmptyState';
+import Skeleton from '@/components/ui/Skeleton';
 
 // Dynamically import ParkingMap
 const ParkingMap = dynamic(() => import('@/components/map/ParkingMap'), {
@@ -57,6 +59,29 @@ interface BookingDraft {
   aiPricePerHour: number;
 }
 
+function toDateTimeLocalValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function getDefaultWindow() {
+  const now = new Date();
+  const next = new Date(now);
+  const mins = next.getMinutes();
+  if (mins === 0) {
+    next.setMinutes(30, 0, 0);
+  } else if (mins <= 30) {
+    next.setMinutes(30, 0, 0);
+  } else {
+    next.setHours(next.getHours() + 1, 0, 0, 0);
+  }
+  const end = new Date(next.getTime() + 2 * 60 * 60 * 1000);
+  return {
+    start: toDateTimeLocalValue(next),
+    end: toDateTimeLocalValue(end),
+  };
+}
+
 export default function DriverDashboard() {
   const { user, activeBooking, setActiveBooking } = useAppStore();
 
@@ -77,7 +102,12 @@ export default function DriverDashboard() {
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [spots, setSpots] = useState<SpotWithStatus[]>([]);
+  const [availableSpots, setAvailableSpots] = useState<SpotWithStatus[]>([]);
   const [loadingSpots, setLoadingSpots] = useState(false);
+  const defaults = getDefaultWindow();
+  const [windowStart, setWindowStart] = useState(defaults.start);
+  const [windowEnd, setWindowEnd] = useState(defaults.end);
+  const [windowConfirmed, setWindowConfirmed] = useState(false);
 
   // Filters
   const [showFilters, setShowFilters] = useState(false);
@@ -187,7 +217,14 @@ export default function DriverDashboard() {
 
     setLoadingSpots(true);
     const unsubscribe = subscribeToParkingSpots(async (allSpots: ParkingSpot[]) => {
-      let enriched = await enrichSpotsWithStatus(allSpots, centerLat, centerLng);
+      const startMs = new Date(windowStart).getTime();
+      const endMs = new Date(windowEnd).getTime();
+      let enriched = await enrichSpotsWithStatus(
+        allSpots,
+        centerLat,
+        centerLng,
+        windowConfirmed ? { startTimeMs: startMs, endTimeMs: endMs } : undefined
+      );
 
       // Sort by distance
       enriched.sort((a, b) => a.distanceKm - b.distanceKm);
@@ -201,11 +238,17 @@ export default function DriverDashboard() {
       if (filterCCTV) enriched = enriched.filter((s) => s.hasCCTV);
 
       setSpots(enriched);
+      if (windowConfirmed) {
+        const filtered = await filterSpotsByWindowAvailability(enriched, startMs, endMs);
+        setAvailableSpots(filtered);
+      } else {
+        setAvailableSpots([]);
+      }
       setLoadingSpots(false);
     });
 
     return () => unsubscribe();
-  }, [locationMode, centerLat, centerLng, maxPrice, filterCovered, filterEV, filterCCTV]);
+  }, [locationMode, centerLat, centerLng, maxPrice, filterCovered, filterEV, filterCCTV, windowConfirmed, windowStart, windowEnd]);
 
   // ── "View on Map" from list ──
   const handleViewOnMap = (spot: SpotWithStatus) => {
@@ -459,6 +502,65 @@ export default function DriverDashboard() {
     );
   }
 
+  // ── Mandatory time window before listings ──
+  if (!windowConfirmed) {
+    return (
+      <AuthGuard requiredRole="driver">
+        <Navbar />
+        <main className="min-h-screen bg-[#0a0a0a] pt-16 flex items-center justify-center">
+          <div className="w-full max-w-xl px-6">
+            <div className="bg-white/[0.03] border border-white/[0.08] p-6">
+              <h2 className="text-white text-lg font-light tracking-wide">Select Parking Time Window</h2>
+              <p className="text-white/35 text-sm mt-1">
+                Enter start and end parking time to view card listings available in that slot.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
+                <div>
+                  <label className="block text-white/35 text-[10px] uppercase tracking-wider mb-1.5">Start</label>
+                  <input
+                    type="datetime-local"
+                    value={windowStart}
+                    onChange={(e) => setWindowStart(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00d4ff]/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-white/35 text-[10px] uppercase tracking-wider mb-1.5">End</label>
+                  <input
+                    type="datetime-local"
+                    value={windowEnd}
+                    onChange={(e) => setWindowEnd(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] text-white text-sm focus:outline-none focus:border-[#00d4ff]/30"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  const startMs = new Date(windowStart).getTime();
+                  const endMs = new Date(windowEnd).getTime();
+                  if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+                    toast.error('Please enter valid start and end times.');
+                    return;
+                  }
+                  if (endMs <= startMs) {
+                    toast.error('End time must be after start time.');
+                    return;
+                  }
+                  setWindowConfirmed(true);
+                }}
+                className="mt-5 w-full py-3 border border-[#00d4ff]/30 bg-[#00d4ff]/10 text-[#00d4ff] text-xs uppercase tracking-[0.14em] hover:bg-[#00d4ff]/20 transition-colors"
+              >
+                Show Listings
+              </button>
+            </div>
+          </div>
+        </main>
+      </AuthGuard>
+    );
+  }
+
   // ── Render: Spots View (ready state) ──
   return (
     <AuthGuard requiredRole="driver">
@@ -479,13 +581,17 @@ export default function DriverDashboard() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-white text-sm font-medium truncate">{locationName || 'Your Location'}</p>
-                  <p className="text-white/25 text-[10px]">{spots.length} spot{spots.length !== 1 ? 's' : ''} found</p>
+                  <p className="text-white/25 text-[10px]">
+                    {availableSpots.length} available in cards • {spots.length} total on map
+                  </p>
                 </div>
                 <button
                   onClick={() => {
                     setLocationMode('idle');
                     setSearchQuery('');
                     setSpots([]);
+                    setAvailableSpots([]);
+                    setWindowConfirmed(false);
                   }}
                   className="text-[#00d4ff]/60 text-[10px] tracking-wider uppercase hover:text-[#00d4ff] transition-colors flex-shrink-0 ml-2"
                 >
@@ -590,20 +696,23 @@ export default function DriverDashboard() {
           /* ── LIST VIEW ── */
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
             {loadingSpots ? (
-              <div className="flex justify-center py-20">
-                <div className="w-8 h-8 border-2 border-white/20 border-t-[#00d4ff] rounded-full animate-spin" />
+              <div className="py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="bg-white/[0.03] border border-white/[0.08] p-4 space-y-3">
+                    <Skeleton className="h-24 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                ))}
               </div>
-            ) : spots.length === 0 ? (
-              <div className="bg-white/[0.03] border border-white/[0.08] p-12 text-center">
-                <MapPin className="w-10 h-10 text-white/10 mx-auto mb-4" />
-                <h2 className="text-white/40 text-lg font-light mb-2">No spots found</h2>
-                <p className="text-white/20 text-sm">
-                  Try a different location or adjust your filters
-                </p>
-              </div>
+            ) : availableSpots.length === 0 ? (
+              <EmptyState
+                title="No available spots"
+                description="Try another time window or adjust your filters."
+              />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {spots.map((spot) => (
+                {availableSpots.map((spot) => (
                   <SpotListCard
                     key={spot.spotId}
                     spot={spot}

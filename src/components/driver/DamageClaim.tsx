@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase';
 import type { AIDamageResponse, Booking } from '@/types';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { createNotification } from '@/lib/notifications';
 
 interface DamageClaimProps {
   booking: Booking;
@@ -47,6 +48,15 @@ export default function DamageClaim({ booking, onClose, onSubmitted }: DamageCla
           submittedAt: serverTimestamp(),
         },
       });
+      await createNotification(
+        booking.ownerId,
+        'damage_claim',
+        `A driver raised a damage claim for booking ${booking.bookingId}.`,
+        {
+          bookingId: booking.bookingId as string,
+          spotTitle: booking.spotTitle,
+        }
+      );
       toast.success('Damage claim submitted.');
       onSubmitted?.();
     } catch {

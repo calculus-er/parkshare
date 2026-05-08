@@ -1,6 +1,8 @@
 'use client';
 
 import type { Booking } from '@/types';
+import Skeleton from '@/components/ui/Skeleton';
+import EmptyState from '@/components/ui/EmptyState';
 
 interface BookingHistoryProps {
   bookings: Booking[];
@@ -17,13 +19,13 @@ export default function BookingHistory({ bookings, loading = false, onRaiseClaim
       </div>
 
       {loading ? (
-        <div className="bg-white/[0.03] border border-white/[0.08] p-6 text-center text-white/40 text-sm">
-          Loading history...
+        <div className="bg-white/[0.03] border border-white/[0.08] p-4 space-y-2">
+          <Skeleton className="h-5 w-1/3" />
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
         </div>
       ) : bookings.length === 0 ? (
-        <div className="bg-white/[0.03] border border-white/[0.08] p-6 text-center text-white/35 text-sm">
-          No past bookings yet.
-        </div>
+        <EmptyState title="No bookings yet" description="Your completed and cancelled bookings will appear here." />
       ) : (
         <div className="space-y-2">
           {bookings.map((booking) => {

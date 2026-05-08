@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Clock, AlertTriangle, Loader2, Sparkles, MapPin, User } from 'lucide-react';
 import type { Booking, AIConflictResponse } from '@/types';
 import toast from 'react-hot-toast';
+import { createNotification } from '@/lib/notifications';
 
 interface ExtensionModalProps {
   booking: Booking;
@@ -25,6 +26,7 @@ export default function ExtensionModal({ booking, onClose, onExtended }: Extensi
   const [conflict, setConflict] = useState<ConflictInfo | null>(null);
   const [aiResolution, setAiResolution] = useState<AIConflictResponse | null>(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [resolving, setResolving] = useState(false);
 
   const pricePerHour = booking.baseRate * booking.aiSurgeMultiplier;
   const additionalAmount = Math.round(pricePerHour * extensionHours);
@@ -92,6 +94,45 @@ export default function ExtensionModal({ booking, onClose, onExtended }: Extensi
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSimulatedResolution = async () => {
+    if (!conflict || !aiResolution) return;
+    setResolving(true);
+    await new Promise((r) => setTimeout(r, 4000));
+
+    const accepted = Math.random() < 0.7;
+    if (accepted) {
+      toast.success('Conflict resolved: extension accepted by next driver.');
+      await createNotification(
+        booking.driverId,
+        'conflict_resolved',
+        `Extension approved at ${booking.spotTitle}. Compensation processed.`,
+        { bookingId: booking.bookingId as string, spotTitle: booking.spotTitle }
+      );
+      await createNotification(
+        conflict.driverId,
+        'conflict_resolved',
+        `Conflict resolved at ${booking.spotTitle}. You received compensation offer of ₹${aiResolution.compensationAmount}.`,
+        { bookingId: conflict.bookingId, spotTitle: booking.spotTitle }
+      );
+    } else {
+      toast.error('Conflict resolved: extension rejected by next driver.');
+      await createNotification(
+        booking.driverId,
+        'conflict_resolved',
+        `Extension denied at ${booking.spotTitle}. Please vacate on time.`,
+        { bookingId: booking.bookingId as string, spotTitle: booking.spotTitle }
+      );
+      await createNotification(
+        conflict.driverId,
+        'conflict_resolved',
+        `Conflict resolved at ${booking.spotTitle}. Your original booking stays unchanged.`,
+        { bookingId: conflict.bookingId, spotTitle: booking.spotTitle }
+      );
+    }
+    setResolving(false);
+    onClose();
   };
 
   const urgencyColors: Record<string, string> = {
@@ -255,6 +296,21 @@ export default function ExtensionModal({ booking, onClose, onExtended }: Extensi
                   className="flex-1 py-2.5 border border-white/[0.1] text-white/60 text-xs tracking-wider uppercase hover:text-white transition-colors"
                 >
                   Change Duration
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSimulatedResolution}
+                  disabled={!aiResolution || resolving}
+                  className="flex-1 py-2.5 border border-[#00d4ff]/30 bg-[#00d4ff]/10 text-[#00d4ff] text-xs tracking-wider uppercase hover:bg-[#00d4ff]/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {resolving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Waiting...
+                    </>
+                  ) : (
+                    'Simulate Resolution'
+                  )}
                 </button>
                 <button
                   type="button"

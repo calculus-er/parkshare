@@ -10,6 +10,8 @@ import BookingCard from '@/components/owner/BookingCard';
 import DamageReview from '@/components/owner/DamageReview';
 import Link from 'next/link';
 import { Plus, MapPin, CalendarClock, History, Zap } from 'lucide-react';
+import EmptyState from '@/components/ui/EmptyState';
+import Skeleton from '@/components/ui/Skeleton';
 
 type Tab = 'active' | 'prebooked' | 'history';
 
@@ -62,7 +64,7 @@ export default function OwnerDashboard() {
       <main className="min-h-screen bg-[#0a0a0a] pt-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div>
               <h1 className="text-2xl font-light text-white tracking-wide">
                 Owner Dashboard
@@ -71,7 +73,7 @@ export default function OwnerDashboard() {
                 Manage your bookings and spots
               </p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <Link
                 href="/owner/spots"
                 className="flex items-center gap-2 px-4 py-2.5 border border-white/[0.08] text-white/60 text-xs tracking-wider uppercase
@@ -134,23 +136,26 @@ export default function OwnerDashboard() {
 
           {/* Booking List */}
           {loading ? (
-            <div className="flex justify-center py-20">
-              <div className="w-8 h-8 border-2 border-white/20 border-t-[#00d4ff] rounded-full animate-spin" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[0, 1].map((i) => (
+                <div key={i} className="bg-white/[0.03] border border-white/[0.08] p-5 space-y-3">
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-3 w-2/3" />
+                  <Skeleton className="h-16 w-full" />
+                </div>
+              ))}
             </div>
           ) : currentBookings.length === 0 ? (
-            <div className="bg-white/[0.03] border border-white/[0.08] p-12 text-center">
-              <History className="w-10 h-10 text-white/10 mx-auto mb-4" />
-              <h2 className="text-white/40 text-lg font-light mb-2">
-                No {activeTab === 'prebooked' ? 'pre-booked' : activeTab} bookings
-              </h2>
-              <p className="text-white/20 text-sm">
-                {activeTab === 'active'
+            <EmptyState
+              title={`No ${activeTab === 'prebooked' ? 'pre-booked' : activeTab} bookings`}
+              description={
+                activeTab === 'active'
                   ? 'No vehicles are currently parked at your spots.'
                   : activeTab === 'prebooked'
-                  ? 'No upcoming reservations for your spots.'
-                  : 'Completed bookings will appear here.'}
-              </p>
-            </div>
+                    ? 'No upcoming reservations for your spots.'
+                    : 'Completed bookings will appear here.'
+              }
+            />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {currentBookings.map((booking) => (

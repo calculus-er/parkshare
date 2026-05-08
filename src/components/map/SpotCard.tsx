@@ -7,6 +7,7 @@ import {
   X, MapPin, Shield, Zap, Eye, Clock,
   ChevronLeft, ChevronRight, Navigation, Sparkles
 } from 'lucide-react';
+import Skeleton from '@/components/ui/Skeleton';
 
 interface SpotCardProps {
   spot: ParkingSpot & { distanceKm: number; markerColor: string };
@@ -191,9 +192,9 @@ export default function SpotCard({ spot, onClose, onBook }: SpotCardProps) {
             )}
           </div>
           {loadingPrice ? (
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border border-white/20 border-t-[#00d4ff] rounded-full animate-spin" />
-              <span className="text-white/30 text-xs">Calculating...</span>
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-36" />
+              <Skeleton className="h-3 w-full" />
             </div>
           ) : aiPrice ? (
             <>
