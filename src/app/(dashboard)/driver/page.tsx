@@ -17,6 +17,8 @@ import BookingConfirmation from '@/components/driver/BookingConfirmation';
 import ActiveBookingPanel from '@/components/driver/ActiveBookingPanel';
 import BookingHistory from '@/components/driver/BookingHistory';
 import ExtensionModal from '@/components/driver/ExtensionModal';
+import VideoCapture from '@/components/driver/VideoCapture';
+import DamageClaim from '@/components/driver/DamageClaim';
 import dynamic from 'next/dynamic';
 import { enrichSpotsWithStatus } from '@/lib/spotUtils';
 import type { SpotWithStatus, Booking } from '@/types';
@@ -95,6 +97,10 @@ export default function DriverDashboard() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [activeBookingSpot, setActiveBookingSpot] = useState<ParkingSpot | null>(null);
   const [showExtensionModal, setShowExtensionModal] = useState(false);
+  const [videoCaptureType, setVideoCaptureType] = useState<'entry' | 'exit' | null>(null);
+  const [showVideoCapture, setShowVideoCapture] = useState(false);
+  const [pendingEndBookingId, setPendingEndBookingId] = useState<string | null>(null);
+  const [claimBooking, setClaimBooking] = useState<Booking | null>(null);
 
   // ── Location detection ──
   const handleNearMe = useCallback(() => {
@@ -328,6 +334,8 @@ export default function DriverDashboard() {
 
       setActiveBooking(createdBooking);
       setBookingDraft(null);
+      setVideoCaptureType('entry');
+      setShowVideoCapture(true);
       toast.success('Booking confirmed successfully.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create booking');
@@ -338,17 +346,23 @@ export default function DriverDashboard() {
 
   const handleEndBooking = async () => {
     if (!activeBooking?.bookingId) return;
+    setPendingEndBookingId(activeBooking.bookingId);
+    setVideoCaptureType('exit');
+    setShowVideoCapture(true);
+  };
+
+  const finalizeEndBooking = async (bookingId: string) => {
     try {
       const response = await fetch('/api/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId: activeBooking.bookingId, action: 'end' }),
+        body: JSON.stringify({ bookingId, action: 'end' }),
       });
       if (!response.ok) {
         throw new Error('Unable to end booking.');
       }
       setActiveBooking(null);
-      toast.success('Booking ended. Exit video step will be added in Phase 9.');
+      toast.success('Booking ended successfully.');
     } catch {
       toast.error('Failed to end booking.');
     }
@@ -599,7 +613,11 @@ export default function DriverDashboard() {
                 ))}
               </div>
             )}
-            <BookingHistory bookings={bookingHistory} loading={loadingHistory} />
+            <BookingHistory
+              bookings={bookingHistory}
+              loading={loadingHistory}
+              onRaiseClaim={(booking) => setClaimBooking(booking)}
+            />
           </div>
         ) : (
           /* ── MAP VIEW ── */
@@ -646,6 +664,44 @@ export default function DriverDashboard() {
             // Re-fetch active booking to get updated endTime
             if (user) {
               getActiveBookingForDriver(user.uid).then(setActiveBooking);
+            }
+          }}
+        />
+      )}
+
+      {showVideoCapture && activeBooking?.bookingId && videoCaptureType && (
+        <VideoCapture
+          bookingId={activeBooking.bookingId}
+          type={videoCaptureType}
+          onUploaded={async () => {
+            setShowVideoCapture(false);
+            setVideoCaptureType(null);
+            if (videoCaptureType === 'exit' && pendingEndBookingId) {
+              await finalizeEndBooking(pendingEndBookingId);
+              setPendingEndBookingId(null);
+            }
+          }}
+          onClose={async () => {
+            setShowVideoCapture(false);
+            setVideoCaptureType(null);
+            if (videoCaptureType === 'exit' && pendingEndBookingId) {
+              await finalizeEndBooking(pendingEndBookingId);
+              setPendingEndBookingId(null);
+            }
+          }}
+        />
+      )}
+
+      {claimBooking && (
+        <DamageClaim
+          booking={claimBooking}
+          onClose={() => setClaimBooking(null)}
+          onSubmitted={() => {
+            setClaimBooking(null);
+            if (user) {
+              getBookingsForDriver(user.uid).then((allBookings) => {
+                setBookingHistory(allBookings.filter((booking) => ['completed', 'cancelled'].includes(booking.status)));
+              });
             }
           }}
         />

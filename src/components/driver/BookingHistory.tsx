@@ -5,9 +5,10 @@ import type { Booking } from '@/types';
 interface BookingHistoryProps {
   bookings: Booking[];
   loading?: boolean;
+  onRaiseClaim?: (booking: Booking) => void;
 }
 
-export default function BookingHistory({ bookings, loading = false }: BookingHistoryProps) {
+export default function BookingHistory({ bookings, loading = false, onRaiseClaim }: BookingHistoryProps) {
   return (
     <section className="mt-8">
       <div className="flex items-center justify-between mb-3">
@@ -46,6 +47,15 @@ export default function BookingHistory({ bookings, loading = false }: BookingHis
                   <p className="text-white/30 text-xs mt-1">
                     {startedAt.toLocaleDateString()} • {startedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {booking.durationHours}h
                   </p>
+                  {onRaiseClaim && booking.status === 'completed' && (
+                    <button
+                      type="button"
+                      onClick={() => onRaiseClaim(booking)}
+                      className="mt-2 text-[10px] uppercase tracking-wider text-amber-400/80 hover:text-amber-400 transition-colors"
+                    >
+                      Raise damage claim
+                    </button>
+                  )}
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-white text-sm">₹{booking.totalAmount}</p>

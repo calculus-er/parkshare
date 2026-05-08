@@ -171,49 +171,53 @@ export async function getActiveBookingForDriver(
 ): Promise<Booking | null> {
   const q = query(
     collection(db, 'bookings'),
-    where('driverId', '==', driverId),
-    where('status', 'in', ['active', 'upcoming', 'overstaying'])
+    where('driverId', '==', driverId)
   );
   const snap = await getDocs(q);
   if (snap.empty) return null;
-  const d = snap.docs[0];
-  return { ...d.data(), bookingId: d.id } as Booking;
+
+  const relevant = snap.docs
+    .map((d) => ({ ...d.data(), bookingId: d.id } as Booking))
+    .filter((booking) => ['active', 'upcoming', 'overstaying'].includes(booking.status))
+    .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+
+  return relevant[0] ?? null;
 }
 
 export async function getBookingsForSpot(spotId: string): Promise<Booking[]> {
   const q = query(
     collection(db, 'bookings'),
-    where('spotId', '==', spotId),
-    orderBy('startTime', 'desc')
+    where('spotId', '==', spotId)
   );
   const snap = await getDocs(q);
-  return snap.docs.map(
+  const bookings = snap.docs.map(
     (d) => ({ ...d.data(), bookingId: d.id } as Booking)
   );
+  return bookings.sort((a, b) => b.startTime.toMillis() - a.startTime.toMillis());
 }
 
 export async function getBookingsForOwner(ownerId: string): Promise<Booking[]> {
   const q = query(
     collection(db, 'bookings'),
-    where('ownerId', '==', ownerId),
-    orderBy('createdAt', 'desc')
+    where('ownerId', '==', ownerId)
   );
   const snap = await getDocs(q);
-  return snap.docs.map(
+  const bookings = snap.docs.map(
     (d) => ({ ...d.data(), bookingId: d.id } as Booking)
   );
+  return bookings.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
 }
 
 export async function getBookingsForDriver(driverId: string): Promise<Booking[]> {
   const q = query(
     collection(db, 'bookings'),
-    where('driverId', '==', driverId),
-    orderBy('createdAt', 'desc')
+    where('driverId', '==', driverId)
   );
   const snap = await getDocs(q);
-  return snap.docs.map(
+  const bookings = snap.docs.map(
     (d) => ({ ...d.data(), bookingId: d.id } as Booking)
   );
+  return bookings.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
 }
 
 export async function updateBookingStatus(
@@ -301,13 +305,15 @@ export async function checkBookingOverlap(
 ): Promise<Booking | null> {
   const q = query(
     collection(db, 'bookings'),
-    where('spotId', '==', spotId),
-    where('status', 'in', ['active', 'upcoming'])
+    where('spotId', '==', spotId)
   );
   const snap = await getDocs(q);
 
   for (const d of snap.docs) {
     const booking = { ...d.data(), bookingId: d.id } as Booking;
+    if (!['active', 'upcoming'].includes(booking.status)) {
+      continue;
+    }
     const bStart = booking.startTime.toMillis();
     const bEnd = booking.endTime.toMillis();
     const rStart = startTime.toMillis();

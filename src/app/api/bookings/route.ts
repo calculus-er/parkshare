@@ -58,13 +58,13 @@ export async function POST(req: Request) {
     // Count how many bookings overlap with the requested time window
     const overlapQuery = query(
       collection(db, 'bookings'),
-      where('spotId', '==', spotId),
-      where('status', 'in', ['active', 'upcoming', 'overstaying'])
+      where('spotId', '==', spotId)
     );
     const overlapSnap = await getDocs(overlapQuery);
     let concurrentBookings = 0;
     overlapSnap.docs.forEach((d) => {
       const b = d.data() as Booking;
+      if (!['active', 'upcoming', 'overstaying'].includes(b.status)) return;
       if (b.startTime.toMillis() < endTime.toMillis() && b.endTime.toMillis() > startTime.toMillis()) {
         concurrentBookings++;
       }
@@ -160,8 +160,7 @@ export async function PATCH(req: Request) {
 
       const overlapQuery = query(
         collection(db, 'bookings'),
-        where('spotId', '==', booking.spotId),
-        where('status', 'in', ['active', 'upcoming', 'overstaying'])
+        where('spotId', '==', booking.spotId)
       );
       const overlapSnap = await getDocs(overlapQuery);
 
@@ -171,6 +170,7 @@ export async function PATCH(req: Request) {
       overlapSnap.docs.forEach((d) => {
         if (d.id === bookingId) return; // skip our own booking
         const b = d.data() as Booking;
+        if (!['active', 'upcoming', 'overstaying'].includes(b.status)) return;
         // Check if this booking overlaps with the extended window
         if (b.startTime.toMillis() < newEnd.toMillis() && b.endTime.toMillis() > currentEnd) {
           concurrentCount++;
