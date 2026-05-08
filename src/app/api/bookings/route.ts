@@ -24,11 +24,6 @@ interface CreateBookingBody {
   aiPricePerHour: number;
 }
 
-interface EndBookingBody {
-  bookingId: string;
-  action: 'end';
-}
-
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -56,23 +51,28 @@ export async function POST(req: Request) {
     }
 
     const spot = { ...spotSnap.data(), spotId: spotSnap.id } as ParkingSpot;
+    const totalSpots = spot.totalSpots ?? 1; // backwards compat for spots created before this field existed
     const startTime = Timestamp.now();
     const endTime = Timestamp.fromMillis(startTime.toMillis() + durationHours * 60 * 60 * 1000);
 
+    // Count how many bookings overlap with the requested time window
     const overlapQuery = query(
       collection(db, 'bookings'),
       where('spotId', '==', spotId),
       where('status', 'in', ['active', 'upcoming', 'overstaying'])
     );
     const overlapSnap = await getDocs(overlapQuery);
-    const hasOverlap = overlapSnap.docs.some((d) => {
+    let concurrentBookings = 0;
+    overlapSnap.docs.forEach((d) => {
       const b = d.data() as Booking;
-      return b.startTime.toMillis() < endTime.toMillis() && b.endTime.toMillis() > startTime.toMillis();
+      if (b.startTime.toMillis() < endTime.toMillis() && b.endTime.toMillis() > startTime.toMillis()) {
+        concurrentBookings++;
+      }
     });
 
-    if (hasOverlap) {
+    if (concurrentBookings >= totalSpots) {
       return NextResponse.json(
-        { error: 'This spot is no longer available for the selected time window.' },
+        { error: `All ${totalSpots} spot(s) at this location are booked for the selected time.` },
         { status: 409 }
       );
     }
@@ -125,16 +125,102 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const body = (await req.json()) as EndBookingBody;
-    if (!body.bookingId || body.action !== 'end') {
+    const body = await req.json();
+
+    if (!body.bookingId || !body.action) {
       return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
     }
 
-    await updateDoc(doc(db, 'bookings', body.bookingId), {
-      status: 'completed',
-    });
+    if (body.action === 'end') {
+      await updateDoc(doc(db, 'bookings', body.bookingId), {
+        status: 'completed',
+      });
+      return NextResponse.json({ success: true });
+    }
 
-    return NextResponse.json({ success: true });
+    if (body.action === 'extend') {
+      const { bookingId, extensionHours, additionalAmount } = body;
+      if (!extensionHours || extensionHours <= 0) {
+        return NextResponse.json({ error: 'Invalid extension hours.' }, { status: 400 });
+      }
+
+      const bookingSnap = await getDoc(doc(db, 'bookings', bookingId));
+      if (!bookingSnap.exists()) {
+        return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
+      }
+      const booking = bookingSnap.data() as Booking;
+
+      const currentEnd = booking.endTime.toMillis();
+      const newEnd = Timestamp.fromMillis(currentEnd + extensionHours * 60 * 60 * 1000);
+
+      // Check if extending would collide with other bookings at this spot
+      const spotSnap = await getDoc(doc(db, 'parkingSpots', booking.spotId));
+      const spotData = spotSnap.exists() ? spotSnap.data() as ParkingSpot : null;
+      const totalSpots = spotData?.totalSpots ?? 1;
+
+      const overlapQuery = query(
+        collection(db, 'bookings'),
+        where('spotId', '==', booking.spotId),
+        where('status', 'in', ['active', 'upcoming', 'overstaying'])
+      );
+      const overlapSnap = await getDocs(overlapQuery);
+
+      let conflictingBooking: (Booking & { bookingId: string }) | null = null;
+      let concurrentCount = 0;
+
+      overlapSnap.docs.forEach((d) => {
+        if (d.id === bookingId) return; // skip our own booking
+        const b = d.data() as Booking;
+        // Check if this booking overlaps with the extended window
+        if (b.startTime.toMillis() < newEnd.toMillis() && b.endTime.toMillis() > currentEnd) {
+          concurrentCount++;
+          if (!conflictingBooking) {
+            conflictingBooking = { ...b, bookingId: d.id };
+          }
+        }
+      });
+
+      // If extending fills all spots → there's a conflict
+      const hasConflict = concurrentCount >= totalSpots;
+
+      if (hasConflict && conflictingBooking) {
+        return NextResponse.json({
+          conflict: true,
+          conflictingBooking: {
+            bookingId: (conflictingBooking as Booking & { bookingId: string }).bookingId,
+            driverName: (conflictingBooking as Booking).driverName,
+            driverId: (conflictingBooking as Booking).driverId,
+            startTimeMs: (conflictingBooking as Booking).startTime.toMillis(),
+            endTimeMs: (conflictingBooking as Booking).endTime.toMillis(),
+          },
+          message: 'Extension conflicts with an upcoming booking. Conflict resolution required.',
+        }, { status: 409 });
+      }
+
+      // No conflict — apply extension directly
+      const extensionRecord = {
+        requestedAt: Timestamp.now(),
+        extensionHours,
+        additionalAmount: additionalAmount || 0,
+        status: 'approved',
+        conflictId: null,
+      };
+
+      await updateDoc(doc(db, 'bookings', bookingId), {
+        endTime: newEnd,
+        durationHours: booking.durationHours + extensionHours,
+        totalAmount: booking.totalAmount + (additionalAmount || 0),
+        extensionRequests: [...(booking.extensionRequests || []), extensionRecord],
+      });
+
+      return NextResponse.json({
+        success: true,
+        newEndTimeMs: newEnd.toMillis(),
+        extensionHours,
+      });
+    }
+
+    return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
   } catch {
     return NextResponse.json({ error: 'Unable to update booking.' }, { status: 500 });
   }

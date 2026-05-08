@@ -16,6 +16,7 @@ import SpotListCard from '@/components/driver/SpotListCard';
 import BookingConfirmation from '@/components/driver/BookingConfirmation';
 import ActiveBookingPanel from '@/components/driver/ActiveBookingPanel';
 import BookingHistory from '@/components/driver/BookingHistory';
+import ExtensionModal from '@/components/driver/ExtensionModal';
 import dynamic from 'next/dynamic';
 import { enrichSpotsWithStatus } from '@/lib/spotUtils';
 import type { SpotWithStatus, Booking } from '@/types';
@@ -93,6 +94,7 @@ export default function DriverDashboard() {
   const [bookingHistory, setBookingHistory] = useState<Booking[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [activeBookingSpot, setActiveBookingSpot] = useState<ParkingSpot | null>(null);
+  const [showExtensionModal, setShowExtensionModal] = useState(false);
 
   // ── Location detection ──
   const handleNearMe = useCallback(() => {
@@ -630,8 +632,22 @@ export default function DriverDashboard() {
         <ActiveBookingPanel
           booking={activeBooking}
           spot={activeBookingSpot}
-          onExtend={() => toast('Extension flow starts in Phase 8.')}
+          onExtend={() => setShowExtensionModal(true)}
           onEnd={handleEndBooking}
+        />
+      )}
+
+      {showExtensionModal && activeBooking && (
+        <ExtensionModal
+          booking={activeBooking}
+          onClose={() => setShowExtensionModal(false)}
+          onExtended={() => {
+            setShowExtensionModal(false);
+            // Re-fetch active booking to get updated endTime
+            if (user) {
+              getActiveBookingForDriver(user.uid).then(setActiveBooking);
+            }
+          }}
         />
       )}
     </AuthGuard>

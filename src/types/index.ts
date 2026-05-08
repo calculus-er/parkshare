@@ -40,6 +40,7 @@ export interface ParkingSpot {
   availableTo: string; // HH:mm
   images: string[]; // Firebase Storage URLs
   isActive: boolean;
+  totalSpots: number; // how many vehicles can park simultaneously
   totalBookings: number;
   averageRating: number;
 }

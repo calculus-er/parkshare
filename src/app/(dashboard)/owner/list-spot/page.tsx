@@ -179,6 +179,7 @@ export default function ListSpotPage() {
   const [hasCCTV, setHasCCTV] = useState(false);
   const [hourlyRate, setHourlyRate] = useState('');
   const [dailyRate, setDailyRate] = useState('');
+  const [totalSpots, setTotalSpots] = useState('1');
   const [availableFrom, setAvailableFrom] = useState('08:00');
   const [availableTo, setAvailableTo] = useState('22:00');
   const [imageFiles, setImageFiles] = useState<File[]>([]);
@@ -299,6 +300,7 @@ export default function ListSpotPage() {
         availableTo,
         images: imageURLs,
         isActive: true,
+        totalSpots: Math.max(1, Number(totalSpots) || 1),
         totalBookings: 0,
         averageRating: 0,
       });
@@ -515,6 +517,27 @@ export default function ListSpotPage() {
                   required
                 />
               </div>
+            </div>
+
+            {/* Number of Spots */}
+            <div>
+              <label className="block text-white/40 text-[10px] tracking-wider uppercase mb-2">
+                Number of Parking Spots *
+              </label>
+              <input
+                type="number"
+                value={totalSpots}
+                onChange={(e) => setTotalSpots(e.target.value)}
+                placeholder="e.g. 5"
+                min="1"
+                max="999"
+                className="w-full max-w-[200px] px-4 py-3 bg-white/[0.03] border border-white/[0.08] text-white text-sm
+                           placeholder:text-white/20 focus:outline-none focus:border-[#00d4ff]/30 transition-colors"
+                required
+              />
+              <p className="text-white/20 text-[10px] mt-1.5">
+                How many vehicles can park at this location simultaneously?
+              </p>
             </div>
 
             {/* Availability */}
