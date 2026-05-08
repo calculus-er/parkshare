@@ -10,8 +10,6 @@ import {
 
 interface SpotCardProps {
   spot: ParkingSpot & { distanceKm: number; markerColor: string };
-  userLat: number;
-  userLng: number;
   onClose: () => void;
   onBook?: (spot: ParkingSpot, hours: number, aiPrice: number) => void;
 }

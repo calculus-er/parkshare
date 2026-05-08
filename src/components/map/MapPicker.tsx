@@ -1,6 +1,7 @@
 'use client';
 
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getTileUrl, getTileAttribution } from '@/lib/mapbox';
@@ -31,6 +32,15 @@ function ClickHandler({ onLocationChange }: { onLocationChange: (lat: number, ln
   return null;
 }
 
+function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([lat, lng], map.getZoom(), { animate: true });
+  }, [lat, lng, map]);
+
+  return null;
+}
+
 export default function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
   return (
     <div className="w-full h-64 border border-white/[0.08] overflow-hidden rounded-sm">
@@ -44,6 +54,7 @@ export default function MapPicker({ lat, lng, onLocationChange }: MapPickerProps
           url={getTileUrl()}
           attribution={getTileAttribution()}
         />
+        <RecenterMap lat={lat} lng={lng} />
         <Marker position={[lat, lng]} icon={defaultIcon} />
         <ClickHandler onLocationChange={onLocationChange} />
       </MapContainer>

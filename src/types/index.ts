@@ -44,6 +44,11 @@ export interface ParkingSpot {
   averageRating: number;
 }
 
+export interface SpotWithStatus extends ParkingSpot {
+  distanceKm: number;
+  markerColor: 'green' | 'red' | 'yellow';
+}
+
 // ──────────────────────────────────────────────
 // Booking
 // ──────────────────────────────────────────────
