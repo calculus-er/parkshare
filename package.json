@@ -9,17 +9,17 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@types/mapbox-gl": "^3.4.1",
+    "@types/leaflet": "^1.9.21",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^12.13.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.14.0",
-    "mapbox-gl": "^3.23.1",
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18",
     "react-hot-toast": "^2.6.0",
-    "react-map-gl": "^8.1.1",
+    "react-leaflet": "^4.2.1",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
