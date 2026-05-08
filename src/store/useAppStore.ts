@@ -1,25 +1,8 @@
 import { create } from 'zustand';
 import { User } from 'firebase/auth';
+import type { Booking } from '@/types';
 
 export type UserRole = 'driver' | 'owner' | null;
-
-interface Booking {
-  bookingId: string;
-  spotId: string;
-  spotTitle: string;
-  spotAddress: string;
-  driverId: string;
-  driverName: string;
-  ownerId: string;
-  startTime: Date;
-  endTime: Date;
-  durationHours: number;
-  baseRate: number;
-  aiSurgeMultiplier: number;
-  totalAmount: number;
-  status: 'upcoming' | 'active' | 'completed' | 'cancelled' | 'overstaying';
-  paymentStatus: 'mock_paid' | 'pending';
-}
 
 interface AppState {
   // Auth

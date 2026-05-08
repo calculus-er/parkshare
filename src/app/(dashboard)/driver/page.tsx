@@ -1,18 +1,30 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { subscribeToParkingSpots } from '@/lib/firestore';
+import {
+  subscribeToParkingSpots,
+  getActiveBookingForDriver,
+  getBookingsForDriver,
+  subscribeToBooking,
+  getParkingSpot,
+} from '@/lib/firestore';
 import { ParkingSpot } from '@/types';
+import { Timestamp } from 'firebase/firestore';
 import AuthGuard from '@/components/auth/AuthGuard';
 import Navbar from '@/components/shared/Navbar';
 import SpotListCard from '@/components/driver/SpotListCard';
+import BookingConfirmation from '@/components/driver/BookingConfirmation';
+import ActiveBookingPanel from '@/components/driver/ActiveBookingPanel';
+import BookingHistory from '@/components/driver/BookingHistory';
 import dynamic from 'next/dynamic';
 import { enrichSpotsWithStatus } from '@/lib/spotUtils';
-import type { SpotWithStatus } from '@/types';
+import type { SpotWithStatus, Booking } from '@/types';
+import { useAppStore } from '@/store/useAppStore';
 import {
   MapPin, Crosshair, Search, Map, LayoutGrid,
   SlidersHorizontal, X, Shield, Zap, Eye, Loader2
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 // Dynamically import ParkingMap
 const ParkingMap = dynamic(() => import('@/components/map/ParkingMap'), {
@@ -36,7 +48,14 @@ interface SearchResult {
   lon: string;
 }
 
+interface BookingDraft {
+  spot: SpotWithStatus;
+  durationHours: number;
+  aiPricePerHour: number;
+}
+
 export default function DriverDashboard() {
+  const { user, activeBooking, setActiveBooking } = useAppStore();
 
   // Location state
   const [locationMode, setLocationMode] = useState<LocationMode>('idle');
@@ -67,6 +86,13 @@ export default function DriverDashboard() {
   // Map fly-to for "View on Map" from list
   const [flyToLat, setFlyToLat] = useState<number | undefined>();
   const [flyToLng, setFlyToLng] = useState<number | undefined>();
+
+  // Booking state
+  const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingHistory, setBookingHistory] = useState<Booking[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [activeBookingSpot, setActiveBookingSpot] = useState<ParkingSpot | null>(null);
 
   // ── Location detection ──
   const handleNearMe = useCallback(() => {
@@ -186,6 +212,144 @@ export default function DriverDashboard() {
     setFilterEV(false);
     setFilterCCTV(false);
     setShowFilters(false);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+
+    let bookingUnsub: (() => void) | null = null;
+
+    const bootstrapBooking = async () => {
+      const active = await getActiveBookingForDriver(user.uid);
+      if (!active) {
+        setActiveBooking(null);
+        return;
+      }
+      setActiveBooking(active);
+      bookingUnsub = subscribeToBooking(active.bookingId as string, (updated) => {
+        setActiveBooking(updated);
+      });
+    };
+
+    bootstrapBooking();
+
+    return () => {
+      if (bookingUnsub) bookingUnsub();
+    };
+  }, [user, setActiveBooking]);
+
+  useEffect(() => {
+    if (!user) return;
+    const loadHistory = async () => {
+      setLoadingHistory(true);
+      try {
+        const allBookings = await getBookingsForDriver(user.uid);
+        setBookingHistory(
+          allBookings.filter((booking) => ['completed', 'cancelled'].includes(booking.status))
+        );
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    loadHistory();
+  }, [user, activeBooking]);
+
+  useEffect(() => {
+    if (!activeBooking?.spotId) {
+      setActiveBookingSpot(null);
+      return;
+    }
+
+    const loadSpot = async () => {
+      const spot = await getParkingSpot(activeBooking.spotId);
+      setActiveBookingSpot(spot);
+    };
+    loadSpot();
+  }, [activeBooking?.spotId]);
+
+  const handleBookSpot = (spot: SpotWithStatus, hours: number, aiPrice: number) => {
+    if (!user) {
+      toast.error('Please sign in again.');
+      return;
+    }
+    setBookingDraft({
+      spot,
+      durationHours: hours,
+      aiPricePerHour: aiPrice,
+    });
+  };
+
+  const handleConfirmBooking = async () => {
+    if (!bookingDraft || !user) return;
+    setBookingSubmitting(true);
+    try {
+      const response = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spotId: bookingDraft.spot.spotId,
+          driverId: user.uid,
+          driverName: user.displayName || 'Driver',
+          durationHours: bookingDraft.durationHours,
+          aiPricePerHour: bookingDraft.aiPricePerHour,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Booking failed');
+      }
+
+      const createdBooking: Booking = {
+        bookingId: data.bookingId,
+        spotId: data.spotId,
+        spotTitle: data.spotTitle,
+        spotAddress: data.spotAddress,
+        driverId: data.driverId,
+        driverName: data.driverName,
+        ownerId: data.ownerId,
+        startTime: Timestamp.fromMillis(data.startTimeMs),
+        endTime: Timestamp.fromMillis(data.endTimeMs),
+        durationHours: data.durationHours,
+        baseRate: data.baseRate,
+        aiSurgeMultiplier: data.aiSurgeMultiplier,
+        totalAmount: data.totalAmount,
+        status: data.status,
+        paymentStatus: data.paymentStatus,
+        extensionRequests: [],
+        entryVideoURL: null,
+        exitVideoURL: null,
+        damageClaimStatus: 'none',
+        damageReport: null,
+        createdAt: Timestamp.now(),
+      };
+
+      setActiveBooking(createdBooking);
+      setBookingDraft(null);
+      toast.success('Booking confirmed successfully.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to create booking');
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  const handleEndBooking = async () => {
+    if (!activeBooking?.bookingId) return;
+    try {
+      const response = await fetch('/api/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: activeBooking.bookingId, action: 'end' }),
+      });
+      if (!response.ok) {
+        throw new Error('Unable to end booking.');
+      }
+      setActiveBooking(null);
+      toast.success('Booking ended. Exit video step will be added in Phase 9.');
+    } catch {
+      toast.error('Failed to end booking.');
+    }
   };
 
   // ── Render: Location Selection (idle state) ──
@@ -428,11 +592,12 @@ export default function DriverDashboard() {
                     key={spot.spotId}
                     spot={spot}
                     onViewOnMap={() => handleViewOnMap(spot)}
-                    onBook={() => handleViewOnMap(spot)}
+                    onBook={() => handleBookSpot(spot, 1, spot.baseHourlyRate)}
                   />
                 ))}
               </div>
             )}
+            <BookingHistory bookings={bookingHistory} loading={loadingHistory} />
           </div>
         ) : (
           /* ── MAP VIEW ── */
@@ -444,10 +609,31 @@ export default function DriverDashboard() {
               spots={spots}
               flyToLat={flyToLat}
               flyToLng={flyToLng}
+              onBookSpot={handleBookSpot}
             />
           </div>
         )}
       </main>
+
+      {bookingDraft && (
+        <BookingConfirmation
+          spot={bookingDraft.spot}
+          durationHours={bookingDraft.durationHours}
+          aiPricePerHour={bookingDraft.aiPricePerHour}
+          submitting={bookingSubmitting}
+          onCancel={() => setBookingDraft(null)}
+          onConfirm={handleConfirmBooking}
+        />
+      )}
+
+      {activeBooking && (
+        <ActiveBookingPanel
+          booking={activeBooking}
+          spot={activeBookingSpot}
+          onExtend={() => toast('Extension flow starts in Phase 8.')}
+          onEnd={handleEndBooking}
+        />
+      )}
     </AuthGuard>
   );
 }

@@ -54,6 +54,7 @@ interface ParkingMapProps {
   /** Optional: fly to a different location (search result) */
   flyToLat?: number;
   flyToLng?: number;
+  onBookSpot?: (spot: SpotWithStatus, hours: number, aiPrice: number) => void;
 }
 
 export default function ParkingMap({
@@ -63,6 +64,7 @@ export default function ParkingMap({
   spots,
   flyToLat,
   flyToLng,
+  onBookSpot,
 }: ParkingMapProps) {
   const [selectedSpot, setSelectedSpot] = useState<SpotWithStatus | null>(null);
 
@@ -141,7 +143,11 @@ export default function ParkingMap({
 
       {/* Spot Card (bottom sheet) */}
       {selectedSpot && (
-        <SpotCard spot={selectedSpot} onClose={handleCloseCard} />
+        <SpotCard
+          spot={selectedSpot}
+          onClose={handleCloseCard}
+          onBook={(spot, hours, aiPrice) => onBookSpot?.(spot as SpotWithStatus, hours, aiPrice)}
+        />
       )}
     </div>
   );
