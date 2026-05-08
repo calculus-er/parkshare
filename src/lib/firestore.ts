@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   addDoc,
+  deleteDoc,
   updateDoc,
   query,
   where,
@@ -128,6 +129,10 @@ export async function updateParkingSpot(
   data: Partial<ParkingSpot>
 ): Promise<void> {
   await updateDoc(doc(db, 'parkingSpots', spotId), data);
+}
+
+export async function deleteParkingSpot(spotId: string): Promise<void> {
+  await deleteDoc(doc(db, 'parkingSpots', spotId));
 }
 
 export function subscribeToParkingSpots(

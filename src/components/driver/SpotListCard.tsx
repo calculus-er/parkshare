@@ -5,12 +5,18 @@ import { formatDistance, getETAMinutes } from '@/lib/mapbox';
 import { MapPin, Shield, Zap, Eye, Star, Clock, Navigation, Map } from 'lucide-react';
 
 interface SpotListCardProps {
-  spot: ParkingSpot & { distanceKm: number; markerColor: string };
+  spot: ParkingSpot & {
+    distanceKm: number;
+    markerColor: string;
+    aiPricePerHour?: number;
+    aiPricingReason?: string;
+  };
   onViewOnMap: () => void;
-  onBook: () => void;
+  /** Opens the same listing detail modal as map marker selection */
+  onOpenListing: () => void;
 }
 
-export default function SpotListCard({ spot, onViewOnMap, onBook }: SpotListCardProps) {
+export default function SpotListCard({ spot, onViewOnMap, onOpenListing }: SpotListCardProps) {
   const etaMinutes = getETAMinutes(spot.distanceKm);
 
   const statusConfig: Record<string, { label: string; style: string }> = {
@@ -21,12 +27,15 @@ export default function SpotListCard({ spot, onViewOnMap, onBook }: SpotListCard
   const status = statusConfig[spot.markerColor] || statusConfig.green;
 
   return (
-    <div className="bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.05] hover:border-white/[0.12] transition-all group">
+    <div
+      onClick={onOpenListing}
+      className="w-full text-left bg-white/[0.03] border border-white/[0.08] hover:bg-white/[0.05] hover:border-white/[0.12] transition-all group cursor-pointer"
+    >
       {/* Image header */}
       {spot.images.length > 0 ? (
-        <div className="relative h-36 overflow-hidden">
+        <div className="relative aspect-video overflow-hidden bg-black/50">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={spot.images[0]} alt={spot.title} className="w-full h-full object-cover" />
+          <img src={spot.images[0]} alt={spot.title} className="w-full h-full object-contain" />
           <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent" />
 
           {/* Status badge */}
@@ -36,18 +45,18 @@ export default function SpotListCard({ spot, onViewOnMap, onBook }: SpotListCard
 
           {/* Price badge */}
           <div className="absolute top-3 right-3 px-2.5 py-1 bg-[#0a0a0a]/80 backdrop-blur-sm border border-white/10 rounded-sm">
-            <span className="text-white text-sm font-light">₹{spot.baseHourlyRate}</span>
+            <span className="text-white text-sm font-light">₹{spot.aiPricePerHour ?? '—'}</span>
             <span className="text-white/40 text-[10px]">/hr</span>
           </div>
         </div>
       ) : (
-        <div className="h-36 bg-white/[0.02] flex items-center justify-center relative">
+        <div className="aspect-video bg-white/[0.02] flex items-center justify-center relative">
           <MapPin className="w-8 h-8 text-white/10" />
           <div className={`absolute top-3 left-3 px-2 py-0.5 text-[9px] tracking-wider uppercase border rounded-sm ${status.style}`}>
             {status.label}
           </div>
           <div className="absolute top-3 right-3 px-2.5 py-1 bg-[#0a0a0a]/80 border border-white/10 rounded-sm">
-            <span className="text-white text-sm font-light">₹{spot.baseHourlyRate}</span>
+            <span className="text-white text-sm font-light">₹{spot.aiPricePerHour ?? '—'}</span>
             <span className="text-white/40 text-[10px]">/hr</span>
           </div>
         </div>
@@ -105,10 +114,17 @@ export default function SpotListCard({ spot, onViewOnMap, onBook }: SpotListCard
           )}
         </div>
 
+        {spot.aiPricingReason && (
+          <p className="text-white/25 text-[10px] italic mb-3 line-clamp-2">{spot.aiPricingReason}</p>
+        )}
+
         {/* Actions */}
         <div className="flex gap-2">
           <button
-            onClick={onViewOnMap}
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewOnMap();
+            }}
             className="flex items-center justify-center gap-1.5 px-3 py-2 border border-white/[0.08] text-white/50 text-[10px] tracking-wider uppercase
                        hover:bg-white/[0.04] hover:text-white/70 transition-all"
           >
@@ -116,12 +132,15 @@ export default function SpotListCard({ spot, onViewOnMap, onBook }: SpotListCard
             Map
           </button>
           <button
-            onClick={onBook}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenListing();
+            }}
             disabled={spot.markerColor === 'red'}
             className="flex-1 py-2 border border-white/20 bg-white/[0.03] text-white text-[10px] tracking-[0.12em] uppercase
                        hover:bg-white hover:text-black transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            {spot.markerColor === 'red' ? 'Booked' : 'View & Book'}
+            {spot.markerColor === 'red' ? 'Booked' : 'View details'}
           </button>
         </div>
       </div>

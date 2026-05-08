@@ -48,6 +48,10 @@ export interface ParkingSpot {
 export interface SpotWithStatus extends ParkingSpot {
   distanceKm: number;
   markerColor: 'green' | 'red' | 'yellow';
+  aiPricePerHour?: number;
+  aiSurgeMultiplier?: number;
+  aiPricingReason?: string;
+  aiDemandLevel?: DemandLevel;
 }
 
 // ──────────────────────────────────────────────
@@ -106,6 +110,9 @@ export interface Booking {
   exitVideoURL: string | null;
   damageClaimStatus: DamageClaimStatus;
   damageReport: DamageReport | null;
+  rating?: number;
+  reviewText?: string;
+  ratedAt?: Timestamp | null;
   createdAt: Timestamp;
 }
 

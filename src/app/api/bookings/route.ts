@@ -21,6 +21,8 @@ interface CreateBookingBody {
   driverId: string;
   driverName: string;
   durationHours: number;
+  startTimeMs?: number;
+  endTimeMs?: number;
   aiPricePerHour: number;
 }
 
@@ -77,8 +79,16 @@ export async function POST(req: Request) {
 
     const spot = { ...spotSnap.data(), spotId: spotSnap.id } as ParkingSpot;
     const totalSpots = spot.totalSpots ?? 1; // backwards compat for spots created before this field existed
-    const startTime = Timestamp.now();
-    const endTime = Timestamp.fromMillis(startTime.toMillis() + durationHours * 60 * 60 * 1000);
+    const startTime = body.startTimeMs
+      ? Timestamp.fromMillis(body.startTimeMs)
+      : Timestamp.now();
+    const endTime = body.endTimeMs
+      ? Timestamp.fromMillis(body.endTimeMs)
+      : Timestamp.fromMillis(startTime.toMillis() + durationHours * 60 * 60 * 1000);
+
+    if (endTime.toMillis() <= startTime.toMillis()) {
+      return NextResponse.json({ error: 'End time must be after start time.' }, { status: 400 });
+    }
 
     // Count how many bookings overlap with the requested time window
     const overlapQuery = query(
@@ -172,6 +182,44 @@ export async function PATCH(req: Request) {
         status: 'completed',
       });
       return NextResponse.json({ success: true });
+    }
+
+    if (body.action === 'rate') {
+      const rating = Number(body.rating);
+      const reviewText = typeof body.reviewText === 'string' ? body.reviewText.trim() : '';
+      if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+        return NextResponse.json({ error: 'Rating must be between 1 and 5.' }, { status: 400 });
+      }
+
+      const bookingSnap = await getDoc(doc(db, 'bookings', body.bookingId));
+      if (!bookingSnap.exists()) {
+        return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
+      }
+      const booking = bookingSnap.data() as Booking;
+
+      await updateDoc(doc(db, 'bookings', body.bookingId), {
+        rating,
+        reviewText,
+        ratedAt: Timestamp.now(),
+      });
+
+      const spotBookingsSnap = await getDocs(
+        query(collection(db, 'bookings'), where('spotId', '==', booking.spotId))
+      );
+      const rated = spotBookingsSnap.docs
+        .map((d) => d.data() as Booking)
+        .filter((b) => typeof b.rating === 'number' && b.rating >= 1 && b.rating <= 5);
+
+      const avg =
+        rated.length === 0
+          ? 0
+          : Number((rated.reduce((sum, b) => sum + (b.rating as number), 0) / rated.length).toFixed(2));
+
+      await updateDoc(doc(db, 'parkingSpots', booking.spotId), {
+        averageRating: avg,
+      });
+
+      return NextResponse.json({ success: true, averageRating: avg });
     }
 
     if (body.action === 'extend') {

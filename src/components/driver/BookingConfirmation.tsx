@@ -23,7 +23,7 @@ export default function BookingConfirmation({
   const totalAmount = Math.round(aiPricePerHour * durationHours);
 
   return (
-    <div className="fixed inset-0 z-[1200] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+    <div className="fixed inset-0 z-[1350] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
       <div className="w-full max-w-md bg-[#0a0a0a] border border-white/[0.1] p-5 sm:p-6">
         <div className="flex items-center gap-2 mb-4">
           <Sparkles className="w-4 h-4 text-[#00d4ff]" />
@@ -42,7 +42,7 @@ export default function BookingConfirmation({
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="bg-white/[0.03] border border-white/[0.08] p-3">
               <p className="text-white/35 uppercase tracking-wider mb-1">Duration</p>
-              <p className="text-white">{durationHours} hour{durationHours > 1 ? 's' : ''}</p>
+              <p className="text-white">{durationHours.toFixed(1)} hour{durationHours > 1 ? 's' : ''}</p>
             </div>
             <div className="bg-white/[0.03] border border-white/[0.08] p-3">
               <p className="text-white/35 uppercase tracking-wider mb-1">AI Price</p>

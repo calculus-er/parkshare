@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import NotificationCenter from './NotificationCenter';
+import Link from 'next/link';
 
 export default function Navbar() {
   const { user, userRole, signOut } = useAuth();
@@ -31,7 +32,7 @@ export default function Navbar() {
       : 'bg-purple-500/10 text-purple-400 border-purple-500/20';
 
   return (
-    <nav className="fixed top-0 left-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-md border-b border-white/[0.06]">
+    <nav className="fixed top-0 left-0 w-full z-[2500] bg-[#0a0a0a]/80 backdrop-blur-md border-b border-white/[0.06]">
       {/* Accent line */}
       <div className="absolute top-0 left-0 w-full h-px bg-[#00d4ff] opacity-40" />
 
@@ -94,6 +95,15 @@ export default function Navbar() {
                       <p className="text-white text-sm truncate">{user.displayName}</p>
                       <p className="text-white/40 text-xs truncate">{user.email}</p>
                     </div>
+                    {userRole === 'driver' && (
+                      <Link
+                        href="/driver/bookings"
+                        className="block px-3 py-3 text-sm text-white/60 hover:text-white hover:bg-white/[0.04] transition-all"
+                        onClick={() => setMenuOpen(false)}
+                      >
+                        My Bookings
+                      </Link>
+                    )}
                     <button
                       onClick={handleSignOut}
                       className="w-full flex items-center gap-3 px-3 py-3 text-left text-sm text-white/60 hover:text-white hover:bg-white/[0.04] transition-all"

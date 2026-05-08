@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getTileUrl, getTileAttribution } from '@/lib/mapbox';
 import { SpotWithStatus } from '@/types';
-import SpotCard from './SpotCard';
 
 // ── Marker icon factory ──
 function createMarkerIcon(color: 'green' | 'red' | 'yellow', price?: number): L.DivIcon {
@@ -54,7 +53,8 @@ interface ParkingMapProps {
   /** Optional: fly to a different location (search result) */
   flyToLat?: number;
   flyToLng?: number;
-  onBookSpot?: (spot: SpotWithStatus, hours: number, aiPrice: number) => void;
+  /** Opening a spot from the map should use the same listing UI as the list view */
+  onSelectSpot?: (spot: SpotWithStatus) => void;
 }
 
 export default function ParkingMap({
@@ -64,17 +64,14 @@ export default function ParkingMap({
   spots,
   flyToLat,
   flyToLng,
-  onBookSpot,
+  onSelectSpot,
 }: ParkingMapProps) {
-  const [selectedSpot, setSelectedSpot] = useState<SpotWithStatus | null>(null);
-
-  const handleSpotClick = useCallback((spot: SpotWithStatus) => {
-    setSelectedSpot(spot);
-  }, []);
-
-  const handleCloseCard = useCallback(() => {
-    setSelectedSpot(null);
-  }, []);
+  const handleSpotClick = useCallback(
+    (spot: SpotWithStatus) => {
+      onSelectSpot?.(spot);
+    },
+    [onSelectSpot]
+  );
 
   return (
     <div className="relative w-full h-full">
@@ -113,7 +110,7 @@ export default function ParkingMap({
           <Marker
             key={spot.spotId}
             position={[spot.latitude, spot.longitude]}
-            icon={createMarkerIcon(spot.markerColor, spot.baseHourlyRate)}
+            icon={createMarkerIcon(spot.markerColor, spot.aiPricePerHour)}
             eventHandlers={{
               click: () => handleSpotClick(spot),
             }}
@@ -141,14 +138,6 @@ export default function ParkingMap({
         </div>
       </div>
 
-      {/* Spot Card (bottom sheet) */}
-      {selectedSpot && (
-        <SpotCard
-          spot={selectedSpot}
-          onClose={handleCloseCard}
-          onBook={(spot, hours, aiPrice) => onBookSpot?.(spot as SpotWithStatus, hours, aiPrice)}
-        />
-      )}
     </div>
   );
 }

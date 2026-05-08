@@ -13,12 +13,14 @@ import { Timestamp } from 'firebase/firestore';
 import AuthGuard from '@/components/auth/AuthGuard';
 import Navbar from '@/components/shared/Navbar';
 import SpotListCard from '@/components/driver/SpotListCard';
+import ListingDetailModal from '@/components/driver/ListingDetailModal';
 import BookingConfirmation from '@/components/driver/BookingConfirmation';
 import ActiveBookingPanel from '@/components/driver/ActiveBookingPanel';
 import BookingHistory from '@/components/driver/BookingHistory';
 import ExtensionModal from '@/components/driver/ExtensionModal';
 import VideoCapture from '@/components/driver/VideoCapture';
 import DamageClaim from '@/components/driver/DamageClaim';
+import RateBookingModal from '@/components/driver/RateBookingModal';
 import dynamic from 'next/dynamic';
 import { enrichSpotsWithStatus, filterSpotsByWindowAvailability } from '@/lib/spotUtils';
 import type { SpotWithStatus, Booking } from '@/types';
@@ -55,7 +57,8 @@ interface SearchResult {
 
 interface BookingDraft {
   spot: SpotWithStatus;
-  durationHours: number;
+  startTimeMs: number;
+  endTimeMs: number;
   aiPricePerHour: number;
 }
 
@@ -120,6 +123,9 @@ export default function DriverDashboard() {
   const [flyToLat, setFlyToLat] = useState<number | undefined>();
   const [flyToLng, setFlyToLng] = useState<number | undefined>();
 
+  // Listing detail (unified list + map)
+  const [listingSpot, setListingSpot] = useState<SpotWithStatus | null>(null);
+
   // Booking state
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
@@ -131,6 +137,52 @@ export default function DriverDashboard() {
   const [showVideoCapture, setShowVideoCapture] = useState(false);
   const [pendingEndBookingId, setPendingEndBookingId] = useState<string | null>(null);
   const [claimBooking, setClaimBooking] = useState<Booking | null>(null);
+  const [rateBooking, setRateBooking] = useState<Booking | null>(null);
+
+  const fetchAIForSpot = useCallback(async (spot: SpotWithStatus) => {
+    const startMs = new Date(windowStart).getTime();
+    const endMs = new Date(windowEnd).getTime();
+    const startDate = new Date(startMs);
+
+    try {
+      const res = await fetch('/api/ai/pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spotId: spot.spotId,
+          baseRate: spot.baseHourlyRate,
+          lat: spot.latitude,
+          lng: spot.longitude,
+          timeOfDay: `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, '0')}`,
+          dayOfWeek: startDate.toLocaleDateString('en-US', { weekday: 'long' }),
+          occupancyNearby: 0.6 + Math.random() * 0.2,
+          hasUpcomingBooking: spot.markerColor === 'yellow',
+          startTimeMs: startMs,
+          endTimeMs: endMs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || typeof data.finalPrice !== 'number') {
+        throw new Error('Pricing unavailable');
+      }
+
+      return {
+        ...spot,
+        aiPricePerHour: data.finalPrice,
+        aiSurgeMultiplier: data.surgeMultiplier,
+        aiPricingReason: data.reasoning,
+        aiDemandLevel: data.demandLevel,
+      } as SpotWithStatus;
+    } catch {
+      return {
+        ...spot,
+        aiPricePerHour: Math.round(spot.baseHourlyRate * 1.1),
+        aiSurgeMultiplier: 1.1,
+        aiPricingReason: 'Price is set with a minimum service markup and local demand balance.',
+        aiDemandLevel: 'medium',
+      } as SpotWithStatus;
+    }
+  }, [windowEnd, windowStart]);
 
   // ── Location detection ──
   const handleNearMe = useCallback(() => {
@@ -237,9 +289,10 @@ export default function DriverDashboard() {
       if (filterEV) enriched = enriched.filter((s) => s.hasEVCharging);
       if (filterCCTV) enriched = enriched.filter((s) => s.hasCCTV);
 
-      setSpots(enriched);
+      const withPricing = await Promise.all(enriched.map(fetchAIForSpot));
+      setSpots(withPricing);
       if (windowConfirmed) {
-        const filtered = await filterSpotsByWindowAvailability(enriched, startMs, endMs);
+        const filtered = await filterSpotsByWindowAvailability(withPricing, startMs, endMs);
         setAvailableSpots(filtered);
       } else {
         setAvailableSpots([]);
@@ -248,7 +301,7 @@ export default function DriverDashboard() {
     });
 
     return () => unsubscribe();
-  }, [locationMode, centerLat, centerLng, maxPrice, filterCovered, filterEV, filterCCTV, windowConfirmed, windowStart, windowEnd]);
+  }, [locationMode, centerLat, centerLng, maxPrice, filterCovered, filterEV, filterCCTV, windowConfirmed, windowStart, windowEnd, fetchAIForSpot]);
 
   // ── "View on Map" from list ──
   const handleViewOnMap = (spot: SpotWithStatus) => {
@@ -318,14 +371,20 @@ export default function DriverDashboard() {
     loadSpot();
   }, [activeBooking?.spotId]);
 
-  const handleBookSpot = (spot: SpotWithStatus, hours: number, aiPrice: number) => {
+  const handleBookSpot = (spot: SpotWithStatus, startTimeMs: number, endTimeMs: number, aiPrice: number) => {
     if (!user) {
       toast.error('Please sign in again.');
       return;
     }
+    if (endTimeMs <= startTimeMs) {
+      toast.error('End time must be after start time.');
+      return;
+    }
+    setListingSpot(null);
     setBookingDraft({
       spot,
-      durationHours: hours,
+      startTimeMs,
+      endTimeMs,
       aiPricePerHour: aiPrice,
     });
   };
@@ -334,6 +393,7 @@ export default function DriverDashboard() {
     if (!bookingDraft || !user) return;
     setBookingSubmitting(true);
     try {
+      const durationHours = (bookingDraft.endTimeMs - bookingDraft.startTimeMs) / (60 * 60 * 1000);
       const response = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -341,7 +401,9 @@ export default function DriverDashboard() {
           spotId: bookingDraft.spot.spotId,
           driverId: user.uid,
           driverName: user.displayName || 'Driver',
-          durationHours: bookingDraft.durationHours,
+          durationHours,
+          startTimeMs: bookingDraft.startTimeMs,
+          endTimeMs: bookingDraft.endTimeMs,
           aiPricePerHour: bookingDraft.aiPricePerHour,
         }),
       });
@@ -404,7 +466,11 @@ export default function DriverDashboard() {
       if (!response.ok) {
         throw new Error('Unable to end booking.');
       }
+      const justCompleted = activeBooking;
       setActiveBooking(null);
+      if (justCompleted) {
+        setRateBooking({ ...justCompleted, status: 'completed' });
+      }
       toast.success('Booking ended successfully.');
     } catch {
       toast.error('Failed to end booking.');
@@ -717,7 +783,7 @@ export default function DriverDashboard() {
                     key={spot.spotId}
                     spot={spot}
                     onViewOnMap={() => handleViewOnMap(spot)}
-                    onBook={() => handleBookSpot(spot, 1, spot.baseHourlyRate)}
+                    onOpenListing={() => setListingSpot(spot)}
                   />
                 ))}
               </div>
@@ -738,16 +804,35 @@ export default function DriverDashboard() {
               spots={spots}
               flyToLat={flyToLat}
               flyToLng={flyToLng}
-              onBookSpot={handleBookSpot}
+              onSelectSpot={(spot) => setListingSpot(spot)}
             />
           </div>
         )}
       </main>
 
+      {listingSpot && (
+        <ListingDetailModal
+          spot={listingSpot}
+          onClose={() => setListingSpot(null)}
+          bookingWindowStart={windowStart}
+          bookingWindowEnd={windowEnd}
+          onUpdateBookingWindow={(start, end) => {
+            setWindowStart(start);
+            setWindowEnd(end);
+          }}
+          onChangeLocation={() => {
+            setListingSpot(null);
+            setLocationMode('idle');
+            setWindowConfirmed(false);
+          }}
+          onBook={handleBookSpot}
+        />
+      )}
+
       {bookingDraft && (
         <BookingConfirmation
           spot={bookingDraft.spot}
-          durationHours={bookingDraft.durationHours}
+          durationHours={(bookingDraft.endTimeMs - bookingDraft.startTimeMs) / (60 * 60 * 1000)}
           aiPricePerHour={bookingDraft.aiPricePerHour}
           submitting={bookingSubmitting}
           onCancel={() => setBookingDraft(null)}
@@ -807,6 +892,20 @@ export default function DriverDashboard() {
           onClose={() => setClaimBooking(null)}
           onSubmitted={() => {
             setClaimBooking(null);
+            if (user) {
+              getBookingsForDriver(user.uid).then((allBookings) => {
+                setBookingHistory(allBookings.filter((booking) => ['completed', 'cancelled'].includes(booking.status)));
+              });
+            }
+          }}
+        />
+      )}
+
+      {rateBooking && (
+        <RateBookingModal
+          booking={rateBooking}
+          onClose={() => setRateBooking(null)}
+          onRated={() => {
             if (user) {
               getBookingsForDriver(user.uid).then((allBookings) => {
                 setBookingHistory(allBookings.filter((booking) => ['completed', 'cancelled'].includes(booking.status)));

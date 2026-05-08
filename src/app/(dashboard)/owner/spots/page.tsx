@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useAppStore } from '@/store/useAppStore';
-import { getParkingSpots, updateParkingSpot } from '@/lib/firestore';
+import { deleteParkingSpot, getParkingSpots, updateParkingSpot } from '@/lib/firestore';
+import { storage } from '@/lib/firebase';
+import { deleteObject, ref } from 'firebase/storage';
 import { ParkingSpot } from '@/types';
 import AuthGuard from '@/components/auth/AuthGuard';
 import Navbar from '@/components/shared/Navbar';
@@ -53,11 +55,20 @@ export default function MySpotsPage() {
 
   const deleteSpot = async (spot: ParkingSpot) => {
     if (!spot.spotId) return;
-    if (!confirm('Are you sure you want to delete this spot?')) return;
+    if (!confirm('Are you sure you want to permanently delete this spot? This cannot be undone.')) return;
     try {
-      await updateParkingSpot(spot.spotId, { isActive: false });
+      await Promise.all(
+        (spot.images || []).map(async (url) => {
+          try {
+            await deleteObject(ref(storage, url));
+          } catch {
+            // Best-effort: continue even if image deletion fails.
+          }
+        })
+      );
+      await deleteParkingSpot(spot.spotId);
       setSpots((prev) => prev.filter((s) => s.spotId !== spot.spotId));
-      toast.success('Spot removed');
+      toast.success('Spot deleted permanently');
     } catch {
       toast.error('Failed to delete spot');
     }
